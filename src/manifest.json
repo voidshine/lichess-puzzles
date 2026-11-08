@@ -1,0 +1,6 @@
+{
+  "title": "lichess daily puzzle",
+  "description": "Shows the lichess.org daily puzzle as a newspaper chess diagram on the sleep screen",
+  "version": "1.0.0",
+  "mount": "settings"
+}

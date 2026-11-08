@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Local preview: renders sample puzzles exactly as the plugin writes them.
+     Open in a browser, or: firefox --headless --window-size=980,820 --screenshot out.png test/preview.html -->
+<html><head><meta charset="utf-8"><title>lichess puzzles preview</title>
+<style>body{margin:0;background:#bbb;display:flex;gap:10px;padding:10px}canvas{background:#fff}</style>
+</head><body>
+<script src="../src/plugin.js"></script>
+<script src="sample.js"></script>
+<script>
+  const L = window.LichessPuzzles;
+  for (const [json, cfg] of window.SAMPLES) {
+    const c = document.createElement('canvas');
+    document.body.appendChild(c);
+    L.renderToCanvas(c, L.toPuzzle(json, new Date(2026, 10, 8)), cfg);
+  }
+</script>
+</body></html>

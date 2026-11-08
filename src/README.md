@@ -30,7 +30,7 @@ puzzle has not changed.
 OPTIONS (on the web card)
 
 - Print the solution upside down at the bottom (default on)
-- Show puzzle themes as a hint (default off)
+- Show puzzle themes as a hint (default on)
 - Show board coordinates (default on)
 
 NOTES

@@ -15,7 +15,7 @@
   const PUZZLE_URL = 'https://lichess.org/api/puzzle/daily';
   const SLEEP_SCREEN_CUSTOM = 2; // CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM
 
-  const DEFAULT_CONFIG = { showThemes: false, showSolution: true, showCoords: true };
+  const DEFAULT_CONFIG = { showThemes: true, showSolution: true, showCoords: true };
 
   // ---------------------------------------------------------------------------
   // Chess: just enough to read a FEN and write the solution in SAN.
@@ -529,11 +529,14 @@
     if (cfg.showSolution && p.solutionText) {
       const s = 'Solution: ' + p.solutionText;
       ctx.save();
-      ctx.translate(W / 2, H - 30);
+      // Centred between the thin rule above and the thick rule below; rotating
+      // about the middle keeps it there when printed upside down.
+      ctx.translate(W / 2, (footerTop + 1 + H - 18) / 2);
       ctx.rotate(Math.PI);
       fitFont(ctx, s, '', 16, W - 2 * M);
       ctx.textAlign = 'center';
-      ctx.fillText(s, 0, -5);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(s, 0, 0);
       ctx.restore();
     }
     rule(ctx, M, W - M, H - 18, 3);

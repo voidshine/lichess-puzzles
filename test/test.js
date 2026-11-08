@@ -9,6 +9,13 @@ eq('r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1', ['e8c8', 'e1g1'], 11, '6...O-O-O 7.O-
 eq('k7/4P3/8/8/8/8/8/4K3 w - - 0 1', ['e7e8q'], 0, '1.e8=Q+');
 eq('k7/8/8/8/8/8/8/1N1K1N2 w - - 0 1', ['b1d2'], 0, '1.Nbd2');
 eq('k7/8/8/3pP3/8/8/8/4K3 w - d6 0 1', ['e5d6'], 0, '1.exd6');
+// Batch puzzles come without a FEN: replay the game.
+assert.strictEqual(c.fenAfterPgn('e4 e5 Nf3 Nc6 Bb5 a6 Bxc6 dxc6 O-O', 9),
+  'r1bqkbnr/1pp2ppp/p1p5/4p3/4P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 0 1');
+assert.strictEqual(c.fenAfterPgn('e4 d5 e5 f5', 4).split(' ')[3], 'f6');
+assert.throws(() => c.fenAfterPgn('e4 e4', 2));
+assert.strictEqual(c.toPuzzle({ game: { pgn: 'f3 e5 g4' }, puzzle: { id: 'x', solution: ['d8h4'], themes: ['mateIn1'], initialPly: 2 } })
+  .solutionText, '2...Qh4#');
 assert.strictEqual(c.legalMoves(c.parseFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')).length, 20);
 assert.throws(() => c.solutionText('k7/8/8/8/8/8/8/4K3 w - - 0 1', ['e1e3'], 0));
 

@@ -30,6 +30,16 @@ reader's **Custom** sleep screen shows `/sleep.bmp` first. The image is
 refreshed whenever the page is open and lichess has a new puzzle, or on demand
 through the job queue (`{"plugin":"lichess_puzzles","action":"update"}`).
 
+**Puzzle pack mode** fetches 1–99 puzzles from
+`https://lichess.org/api/puzzle/batch/mix?nb=N` (up to 50 per request) and
+writes `/sleep/lichess-puzzle-NN.bmp`. With no `/sleep.bmp`, the Custom sleep
+screen shows a different one on every sleep, cycling through all of them, so
+the user only needs to connect once per pack. The firmware cannot choose a
+sleep image by date, so a pack is per sleep, not per day. Batch puzzles carry
+no FEN, so the position is found by replaying the game's moves up to
+`initialPly`. The plugin never deletes `/sleep.bmp`; a button removes the
+`lichess-puzzle-*.bmp` files.
+
 ## Development
 
 - `node test/test.js` — notation and BMP encoder checks.

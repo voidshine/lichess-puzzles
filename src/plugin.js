@@ -13,9 +13,15 @@
   const SCREEN_H = 800;
   const SLEEP_PATH = '/sleep.bmp';
   const PUZZLE_URL = 'https://lichess.org/api/puzzle/daily';
+  const BATCH_URL = 'https://lichess.org/api/puzzle/batch/mix?nb=';
+  const BATCH_MAX = 50; // lichess returns at most 50 puzzles per batch request
+  const PACK_DIR = '/sleep';
+  const PACK_MAX = 99; // two-digit file numbers
+  const PACK_FILE_RE = /^lichess-puzzle-\d+\.bmp$/;
+  const packName = (n) => 'lichess-puzzle-' + String(n).padStart(2, '0') + '.bmp';
   const SLEEP_SCREEN_CUSTOM = 2; // CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM
 
-  const DEFAULT_CONFIG = { showThemes: true, showSolution: true, showCoords: true };
+  const DEFAULT_CONFIG = { showThemes: true, showSolution: true, showCoords: true, mode: 'daily', packSize: 31 };
 
   // ---------------------------------------------------------------------------
   // Chess: just enough to read a FEN and write the solution in SAN.
@@ -188,6 +194,27 @@
     return { from: sqIndex(uci.slice(0, 2)), to: sqIndex(uci.slice(2, 4)), promo: uci[4] || undefined };
   }
 
+  // SAN without the check suffix; `legal` is legalMoves(pos).
+  function sanBody(pos, mv, legal) {
+    const p = pos.board[mv.from];
+    const kind = p.toLowerCase();
+    const capture = !!pos.board[mv.to] || (kind === 'p' && mv.to === pos.ep);
+    if (kind === 'k' && Math.abs(mv.to - mv.from) === 2) return mv.to > mv.from ? 'O-O' : 'O-O-O';
+    if (kind === 'p') {
+      return (capture ? FILES[mv.from & 7] + 'x' : '') + sqName(mv.to) + (mv.promo ? '=' + mv.promo.toUpperCase() : '');
+    }
+    const rivals = legal.filter((m) => m.to === mv.to && m.from !== mv.from && pos.board[m.from] === p);
+    let dis = '';
+    if (rivals.length) {
+      const sameFile = rivals.some((m) => (m.from & 7) === (mv.from & 7));
+      const sameRank = rivals.some((m) => m.from >> 3 === mv.from >> 3);
+      if (!sameFile) dis = FILES[mv.from & 7];
+      else if (!sameRank) dis = String(8 - (mv.from >> 3));
+      else dis = sqName(mv.from);
+    }
+    return kind.toUpperCase() + dis + (capture ? 'x' : '') + sqName(mv.to);
+  }
+
   // Returns [san, nextPos] for a UCI move in pos.
   function toSan(pos, uci) {
     const mv = parseUci(uci);
@@ -195,31 +222,46 @@
     if (!legal.some((m) => m.from === mv.from && m.to === mv.to && (m.promo || undefined) === mv.promo)) {
       throw new Error('illegal move ' + uci);
     }
-    const p = pos.board[mv.from];
-    const kind = p.toLowerCase();
-    const capture = !!pos.board[mv.to] || (kind === 'p' && mv.to === pos.ep);
-    let san;
-    if (kind === 'k' && Math.abs(mv.to - mv.from) === 2) {
-      san = mv.to > mv.from ? 'O-O' : 'O-O-O';
-    } else if (kind === 'p') {
-      san = (capture ? FILES[mv.from & 7] + 'x' : '') + sqName(mv.to) + (mv.promo ? '=' + mv.promo.toUpperCase() : '');
-    } else {
-      const rivals = legal.filter((m) => m.to === mv.to && m.from !== mv.from && pos.board[m.from] === p);
-      let dis = '';
-      if (rivals.length) {
-        const sameFile = rivals.some((m) => (m.from & 7) === (mv.from & 7));
-        const sameRank = rivals.some((m) => m.from >> 3 === mv.from >> 3);
-        if (!sameFile) dis = FILES[mv.from & 7];
-        else if (!sameRank) dis = String(8 - (mv.from >> 3));
-        else dis = sqName(mv.from);
-      }
-      san = kind.toUpperCase() + dis + (capture ? 'x' : '') + sqName(mv.to);
-    }
+    let san = sanBody(pos, mv, legal);
     const next = applyMove(pos, mv);
     if (isAttacked(next.board, kingSquare(next.board, next.turn), pos.turn)) {
       san += legalMoves(next).length ? '+' : '#';
     }
     return [san, next];
+  }
+
+  const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+  function toFen(pos) {
+    let out = '';
+    for (let r = 0; r < 8; r++) {
+      let empty = 0;
+      for (let f = 0; f < 8; f++) {
+        const p = pos.board[r * 8 + f];
+        if (!p) { empty++; continue; }
+        if (empty) { out += empty; empty = 0; }
+        out += p;
+      }
+      if (empty) out += empty;
+      if (r < 7) out += '/';
+    }
+    return out + ' ' + pos.turn + ' ' + (pos.castling || '-') + ' ' + (pos.ep < 0 ? '-' : sqName(pos.ep)) + ' 0 1';
+  }
+
+  // Plays the first `plies` SAN moves of a game ("e4 e5 Nf3 …") and returns the FEN.
+  // The batch API sends puzzles this way, without a FEN.
+  function fenAfterPgn(pgn, plies) {
+    let pos = parseFen(START_FEN);
+    const tokens = pgn.split(/\s+/).filter((t) => t && !/^(\d+\.+|1-0|0-1|1\/2-1\/2|\*)$/.test(t));
+    if (tokens.length < plies) throw new Error('game too short for puzzle');
+    for (let k = 0; k < plies; k++) {
+      const want = tokens[k].replace(/^\d+\.+/, '').replace(/[+#!?]+$/, '').replace(/0/g, 'O');
+      const legal = legalMoves(pos);
+      const mv = legal.find((m) => sanBody(pos, m, legal) === want);
+      if (!mv) throw new Error('cannot play ' + tokens[k] + ' at ply ' + (k + 1));
+      pos = applyMove(pos, mv);
+    }
+    return toFen(pos);
   }
 
   // "20.Rf4 Qc2 21.Rxd4" — firstPly is the 0-based game ply of the first move.
@@ -441,7 +483,7 @@
     y += 21;
     ctx.font = 'italic 16px ' + SERIF;
     ctx.textAlign = 'left';
-    ctx.fillText('lichess.org daily puzzle', M, y);
+    ctx.fillText(p.label || 'lichess.org daily puzzle', M, y);
     ctx.textAlign = 'right';
     ctx.fillText(p.date, W - M, y);
     ctx.textAlign = 'center';
@@ -612,8 +654,9 @@
 
   // Turns the lichess API answer into what renderPage needs.
   function toPuzzle(json, now = new Date()) {
-    const pz = json.puzzle;
+    const pz = Object.assign({}, json.puzzle);
     const game = json.game || {};
+    if (!pz.fen) pz.fen = fenAfterPgn(game.pgn || '', (pz.initialPly || 0) + 1);
     let sol = '';
     try {
       sol = solutionText(pz.fen, pz.solution || [], (pz.initialPly || 0) + 1);
@@ -643,15 +686,23 @@
   }
 
   const core = {
-    parseFen, legalMoves, toSan, solutionText, encodeMonoBmp, renderPage, renderToCanvas,
+    parseFen, toFen, fenAfterPgn, legalMoves, toSan, solutionText, encodeMonoBmp, renderPage, renderToCanvas,
     toPuzzle, taskLine, PIECES, drawPiece, SCREEN_W, SCREEN_H,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = core;
   if (typeof window !== 'undefined') window.LichessPuzzles = core;
   if (typeof window === 'undefined' || !window.CrossPoint) return;
 
+
   // ---------------------------------------------------------------------------
-  // Web UI (Plugins page) and job-queue action
+  // Web UI (Plugins page) and job-queue actions
+  //
+  // Two modes:
+  //  - daily: today's puzzle in /sleep.bmp, refreshed whenever this page is open.
+  //  - pack:  N puzzles in /sleep/lichess-puzzle-NN.bmp. With no /sleep.bmp,
+  //           the Custom sleep screen picks a different one on every sleep
+  //           (it goes through the whole folder before repeating), so one
+  //           visit to this page lasts N sleeps.
   // ---------------------------------------------------------------------------
 
   CrossPoint.registerPlugin(function (container, api) {
@@ -663,43 +714,112 @@
       } catch (e) { return null; }
     };
     const writeJson = (file, obj) => api.writeFile(api.dir + '/' + file, textB64(JSON.stringify(obj)));
+    const loadConfig = async () => Object.assign({}, DEFAULT_CONFIG, (await readJson('config.json')) || {});
+    const clampPack = (n) => Math.min(PACK_MAX, Math.max(1, Math.round(Number(n)) || DEFAULT_CONFIG.packSize));
 
-    async function sleepBmpExists() {
+    // Directory listing; [] when the folder does not exist.
+    async function listDir(path) {
       try {
-        const list = await (await fetch('/api/files?path=/')).json();
-        return Array.isArray(list) && list.some((f) => f.name === SLEEP_PATH.slice(1) && !f.isDirectory);
-      } catch (e) { return false; }
+        const r = await fetch('/api/files?path=' + encodeURIComponent(path), { cache: 'no-cache' });
+        if (!r.ok) return [];
+        const list = await r.json();
+        return Array.isArray(list) ? list : [];
+      } catch (e) { return []; }
+    }
+    async function postForm(url, fields) {
+      const r = await fetch(url, { method: 'POST', body: new URLSearchParams(fields) });
+      if (!r.ok) throw new Error(url + ' HTTP ' + r.status + ': ' + (await r.text()).slice(0, 120));
+    }
+    const fileExists = async (dir, name) => (await listDir(dir)).some((f) => f.name === name && !f.isDirectory);
+    const packFiles = async () => (await listDir(PACK_DIR)).filter((f) => !f.isDirectory && PACK_FILE_RE.test(f.name));
+
+    async function relayJson(url) {
+      const r = await api.relay('GET', url, { Accept: 'application/json' });
+      if (r.status !== 200) throw new Error('lichess answered HTTP ' + r.status);
+      return JSON.parse(r.body);
     }
 
-    async function fetchPuzzle() {
-      const r = await api.relay('GET', PUZZLE_URL, { Accept: 'application/json' });
-      if (r.status !== 200) throw new Error('lichess answered HTTP ' + r.status);
-      return toPuzzle(JSON.parse(r.body));
-    }
+    // --- daily mode ---
 
     // Fetch, render and write. Skips the write when today's puzzle is already
     // on the card unless `force`. `allowReplace` is needed to overwrite a
     // /sleep.bmp this plugin did not write.
     async function update({ force = false, allowReplace = false, canvas = null } = {}) {
-      const [cfg, state] = await Promise.all([readJson('config.json'), readJson('state.json')]);
-      const config = Object.assign({}, DEFAULT_CONFIG, cfg || {});
-      const puzzle = await fetchPuzzle();
-      const target = canvas || document.createElement('canvas');
-      const bmp = renderToCanvas(target, puzzle, config);
+      const [config, state] = await Promise.all([loadConfig(), readJson('state.json')]);
+      const puzzle = toPuzzle(await relayJson(PUZZLE_URL));
+      const bmp = renderToCanvas(canvas || document.createElement('canvas'), puzzle, config);
       const owned = !!(state && state.owner);
-      if (!owned && !allowReplace && (await sleepBmpExists())) {
+      if (!owned && !allowReplace && (await fileExists('/', SLEEP_PATH.slice(1)))) {
         return { puzzle: puzzle.id, written: false, reason: 'foreign-sleep-bmp' };
       }
       if (!force && state && state.puzzle === puzzle.id) {
         return { puzzle: puzzle.id, written: false, reason: 'up-to-date' };
       }
       await api.writeFile(SLEEP_PATH, bytesToBase64(bmp));
-      await writeJson('state.json', { owner: true, puzzle: puzzle.id, written: new Date().toISOString() });
+      await writeJson('state.json', Object.assign({}, state, {
+        owner: true, puzzle: puzzle.id, written: new Date().toISOString(),
+      }));
       return { puzzle: puzzle.id, written: true };
     }
 
-    // Runs from /api/plugin-jobs: {"plugin":"lichess_puzzles","action":"update","args":{"force":true}}
+    // --- pack mode ---
+
+    async function fetchBatch(count) {
+      const seen = new Set();
+      const out = [];
+      for (let tries = 0; out.length < count && tries < Math.ceil(count / BATCH_MAX) + 3; tries++) {
+        const json = await relayJson(BATCH_URL + Math.min(BATCH_MAX, count - out.length));
+        let added = 0;
+        for (const item of json.puzzles || []) {
+          if (out.length >= count || !item.puzzle || seen.has(item.puzzle.id)) continue;
+          seen.add(item.puzzle.id);
+          out.push(item);
+          added++;
+        }
+        if (!added) break;
+      }
+      if (!out.length) throw new Error('lichess sent no puzzles');
+      return out;
+    }
+
+    // Writes /sleep/lichess-puzzle-01.bmp … NN.bmp and removes higher-numbered
+    // ones left over from a bigger pack. Other files in /sleep are not touched.
+    async function fillPack({ count, canvas = null, onProgress = () => {} } = {}) {
+      const config = await loadConfig();
+      const n = clampPack(count === undefined ? config.packSize : count);
+      onProgress('Fetching ' + n + ' puzzles from lichess…');
+      const items = await fetchBatch(n);
+      if (!(await listDir('/')).some((f) => f.isDirectory && f.name === PACK_DIR.slice(1))) {
+        await postForm('/mkdir', { name: PACK_DIR.slice(1), path: '/' });
+      }
+      const target = canvas || document.createElement('canvas');
+      for (let i = 0; i < items.length; i++) {
+        const puzzle = toPuzzle(items[i]);
+        puzzle.label = 'lichess.org puzzle';
+        puzzle.date = 'No. ' + (i + 1) + ' of ' + items.length;
+        onProgress('Writing ' + packName(i + 1) + ' (' + (i + 1) + ' of ' + items.length + ')…');
+        const bmp = renderToCanvas(target, puzzle, config);
+        await api.writeFile(PACK_DIR + '/' + packName(i + 1), bytesToBase64(bmp));
+      }
+      const stale = (await packFiles())
+        .filter((f) => Number(f.name.match(/\d+/)[0]) > items.length)
+        .map((f) => PACK_DIR + '/' + f.name);
+      if (stale.length) await postForm('/delete', { paths: JSON.stringify(stale) });
+      const state = (await readJson('state.json')) || {};
+      await writeJson('state.json', Object.assign(state, { pack: { count: items.length, written: new Date().toISOString() } }));
+      return { written: items.length, removed: stale.length };
+    }
+
+    async function cleanPack() {
+      const paths = (await packFiles()).map((f) => PACK_DIR + '/' + f.name);
+      if (paths.length) await postForm('/delete', { paths: JSON.stringify(paths) });
+      return { removed: paths.length };
+    }
+
+    // Job queue, e.g. {"plugin":"lichess_puzzles","action":"fill","args":{"count":31}}
     api.registerAction('update', async (args) => update({ force: !!(args && args.force) }));
+    api.registerAction('fill', async (args) => fillPack({ count: args && args.count }));
+    api.registerAction('clean', async () => cleanPack());
 
     // --- card UI ---
     container.innerHTML = '';
@@ -708,19 +828,33 @@
       for (const k of kids) n.append(k);
       return n;
     };
-    const status = el('p', { textContent: 'Loading today’s puzzle…' });
+    const button = (text) => el('button', { type: 'button', textContent: text });
+    const status = el('p', { textContent: 'Loading…' });
+    const notes = el('div');
     const canvas = el('canvas', { width: SCREEN_W, height: SCREEN_H });
-    canvas.style.cssText = 'width:240px;height:400px;border:1px solid #888;display:block;margin:8px 0';
+    canvas.style.cssText = 'width:240px;height:400px;border:1px solid #888;display:none;margin:8px 0';
     const modeNote = el('p');
     const options = el('div');
-    const btnUpdate = el('button', { textContent: 'Update sleep screen now', type: 'button' });
-    const btnReplace = el('button', { textContent: 'Replace existing /sleep.bmp', type: 'button' });
+    const modes = el('div');
+
+    const btnUpdate = button('Update sleep screen now');
+    const btnReplace = button('Replace existing /sleep.bmp');
     btnReplace.style.display = 'none';
+    const dailyRow = el('p', {}, btnUpdate, ' ', btnReplace);
+
+    const countInput = el('input', { type: 'number', min: 1, max: PACK_MAX, step: 1, value: DEFAULT_CONFIG.packSize });
+    countInput.style.width = '4em';
+    const btnFill = button('Fetch and fill');
+    const packRow = el('p', {}, 'Puzzles: ', countInput, ' ', btnFill);
+
+    const btnClean = button('Delete /sleep/lichess-puzzle-*.bmp');
+    const allButtons = [btnUpdate, btnReplace, btnFill, btnClean];
+
     container.append(
-      el('h2', { textContent: 'lichess daily puzzle' }),
-      el('p', { textContent: 'Draws the lichess.org daily puzzle as a newspaper diagram on the sleep screen. ' +
-        'It refreshes whenever this page is open and a new puzzle is out.' }),
-      status, canvas, options, modeNote, el('p', {}, btnUpdate, ' ', btnReplace),
+      el('h2', { textContent: 'lichess puzzles' }),
+      el('p', { textContent: 'Draws lichess.org puzzles as newspaper chess diagrams for the sleep screen.' }),
+      modes, dailyRow, packRow, status, notes, canvas, options, modeNote,
+      el('p', {}, btnClean),
     );
 
     let config = Object.assign({}, DEFAULT_CONFIG);
@@ -729,16 +863,55 @@
       showThemes: 'Show puzzle themes as a hint',
       showCoords: 'Show board coordinates',
     };
+    const MODE_LABELS = {
+      daily: 'Daily puzzle — today’s puzzle in /sleep.bmp, refreshed whenever this page is open',
+      pack: 'Puzzle pack — several puzzles in /sleep/, a different one each time the reader sleeps',
+    };
 
     const setStatus = (t) => { status.textContent = t; };
-    const run = async (opts) => {
-      btnUpdate.disabled = btnReplace.disabled = true;
-      setStatus('Fetching puzzle…');
-      try {
+    const saveConfig = async () => {
+      try { await writeJson('config.json', config); return true; }
+      catch (e) { setStatus('Could not save options: ' + e.message); return false; }
+    };
+    const busy = async (fn) => {
+      allButtons.forEach((b) => { b.disabled = true; });
+      try { await fn(); }
+      catch (e) { setStatus('Failed: ' + (e && e.message ? e.message : e)); }
+      finally { allButtons.forEach((b) => { b.disabled = false; }); }
+    };
+    const showCanvas = () => { canvas.style.display = 'block'; };
+
+    // Facts about the SD card that decide what the sleep screen will show.
+    async function refreshNotes() {
+      notes.replaceChildren();
+      const note = (t) => notes.append(el('p', { textContent: t }));
+      const [rootList, sleepList, state] = await Promise.all([listDir('/'), listDir(PACK_DIR), readJson('state.json')]);
+      const ours = sleepList.filter((f) => !f.isDirectory && PACK_FILE_RE.test(f.name)).length;
+      const others = sleepList.filter((f) => !f.isDirectory && /\.bmp$/i.test(f.name) && !PACK_FILE_RE.test(f.name)).length;
+      const hasSleepBmp = rootList.some((f) => f.name === SLEEP_PATH.slice(1) && !f.isDirectory);
+      if (config.mode === 'pack') {
+        note(ours ? PACK_DIR + ' holds ' + ours + ' lichess puzzle image' + (ours === 1 ? '' : 's') + '.'
+          : 'No lichess puzzle images in ' + PACK_DIR + ' yet.');
+        if (hasSleepBmp) {
+          note('⚠ ' + SLEEP_PATH + (state && state.owner ? ' (written by daily mode)' : '') +
+            ' is on the SD card. It takes priority over ' + PACK_DIR + ', so the reader will keep showing it. ' +
+            'Delete or rename it in Files to use the pack.');
+        }
+        if (others) note(others + ' other image' + (others === 1 ? ' is' : 's are') + ' in ' + PACK_DIR + ' and will be mixed in.');
+      } else if (ours) {
+        note(ours + ' pack image' + (ours === 1 ? '' : 's') + ' in ' + PACK_DIR +
+          ' only show when there is no ' + SLEEP_PATH + '.');
+      }
+    }
+
+    function runDaily(opts) {
+      return busy(async () => {
+        setStatus('Fetching today’s puzzle…');
+        showCanvas();
         const res = await update(Object.assign({ canvas }, opts));
+        btnReplace.style.display = 'none';
         if (res.written) {
           setStatus('Puzzle ' + res.puzzle + ' written to ' + SLEEP_PATH + '. It shows the next time the reader sleeps.');
-          btnReplace.style.display = 'none';
         } else if (res.reason === 'up-to-date') {
           setStatus('Puzzle ' + res.puzzle + ' is already on the sleep screen.');
         } else if (res.reason === 'foreign-sleep-bmp') {
@@ -746,14 +919,41 @@
             'Replace it to show the puzzle (back it up first if you want to keep it).');
           btnReplace.style.display = '';
         }
-      } catch (e) {
-        setStatus('Update failed: ' + (e && e.message ? e.message : e));
-      } finally {
-        btnUpdate.disabled = btnReplace.disabled = false;
-      }
+        await refreshNotes();
+      });
+    }
+
+    function runFill() {
+      return busy(async () => {
+        config.packSize = clampPack(countInput.value);
+        countInput.value = config.packSize;
+        await saveConfig();
+        showCanvas();
+        const res = await fillPack({ count: config.packSize, canvas, onProgress: setStatus });
+        setStatus('Wrote ' + res.written + ' puzzles to ' + PACK_DIR +
+          (res.removed ? ' and removed ' + res.removed + ' left over from a bigger pack' : '') + '.' +
+          (res.written < config.packSize ? ' (lichess sent fewer than asked.)' : ''));
+        await refreshNotes();
+      });
+    }
+
+    btnUpdate.onclick = () => runDaily({ force: true });
+    btnReplace.onclick = () => runDaily({ force: true, allowReplace: true });
+    btnFill.onclick = runFill;
+    btnClean.onclick = () => {
+      if (!confirm('Delete every ' + PACK_DIR + '/lichess-puzzle-*.bmp file?')) return;
+      busy(async () => {
+        const res = await cleanPack();
+        setStatus(res.removed ? 'Deleted ' + res.removed + ' puzzle image' + (res.removed === 1 ? '' : 's') + '.'
+          : 'No lichess puzzle images to delete.');
+        await refreshNotes();
+      });
     };
-    btnUpdate.onclick = () => run({ force: true });
-    btnReplace.onclick = () => run({ force: true, allowReplace: true });
+
+    function showMode() {
+      dailyRow.style.display = config.mode === 'daily' ? '' : 'none';
+      packRow.style.display = config.mode === 'pack' ? '' : 'none';
+    }
 
     async function checkSleepMode() {
       try {
@@ -762,8 +962,8 @@
         if (!s) return;
         if (s.value === SLEEP_SCREEN_CUSTOM) { modeNote.textContent = ''; return; }
         const current = (s.options && s.options[s.value]) || String(s.value);
-        modeNote.textContent = 'Sleep screen is set to “' + current + '”, so the puzzle will not show. ';
-        const fix = el('button', { type: 'button', textContent: 'Switch sleep screen to Custom' });
+        modeNote.textContent = 'Sleep screen is set to “' + current + '”, so the puzzles will not show. ';
+        const fix = button('Switch sleep screen to Custom');
         fix.onclick = async () => {
           fix.disabled = true;
           try {
@@ -782,18 +982,41 @@
     }
 
     return (async () => {
-      config = Object.assign(config, (await readJson('config.json')) || {});
+      config = await loadConfig();
+      config.packSize = clampPack(config.packSize);
+      countInput.value = config.packSize;
+      for (const mode of Object.keys(MODE_LABELS)) {
+        const radio = el('input', { type: 'radio', name: 'lichess-puzzles-mode', checked: config.mode === mode });
+        radio.onchange = async () => {
+          config.mode = mode;
+          showMode();
+          await saveConfig();
+          if (mode === 'daily') runDaily({});
+          else {
+            setStatus('Choose how many puzzles to fetch, then press Fetch and fill.');
+            await refreshNotes();
+          }
+        };
+        modes.append(el('label', { style: 'display:block' }, radio, ' ' + MODE_LABELS[mode]));
+      }
       for (const key of Object.keys(OPTION_LABELS)) {
         const box = el('input', { type: 'checkbox', checked: !!config[key] });
         box.onchange = async () => {
           config[key] = box.checked;
-          try { await writeJson('config.json', config); } catch (e) { setStatus('Could not save options: ' + e.message); return; }
-          run({ force: true });
+          if (!(await saveConfig())) return;
+          if (config.mode === 'daily') runDaily({ force: true });
+          else setStatus('Saved. The change applies the next time you fetch and fill.');
         };
         options.append(el('label', { style: 'display:block' }, box, ' ' + OPTION_LABELS[key]));
       }
+      showMode();
       checkSleepMode();
-      run({});
+      if (config.mode === 'daily') runDaily({});
+      else {
+        // Refilling replaces the puzzles, so pack mode never runs by itself on page load.
+        setStatus('Choose how many puzzles to fetch, then press Fetch and fill.');
+        await refreshNotes();
+      }
     })();
   });
 })();

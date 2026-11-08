@@ -1,6 +1,6 @@
-lichess daily puzzle
+lichess puzzles
 
-Shows the lichess.org daily chess puzzle on the sleep screen, drawn like a
+Shows lichess.org chess puzzles on the sleep screen, drawn like a
 classic newspaper diagram: hatched dark squares, woodcut-style pieces, and the
 solution printed upside down at the bottom.
 
@@ -14,6 +14,24 @@ SETUP
 
 The next time the reader sleeps, the puzzle is on screen.
 
+TWO MODES
+
+Daily puzzle: today's puzzle in /sleep.bmp. Refreshed whenever the Plugins
+page is open.
+
+Puzzle pack: pick how many puzzles (1-99) and press "Fetch and fill". The
+plugin writes /sleep/lichess-puzzle-01.bmp, -02.bmp, ... and the reader shows
+a different one each time it sleeps, going through all of them before any
+repeats. One visit lasts as many sleeps as you have puzzles.
+
+- /sleep.bmp always wins over the /sleep folder. The plugin never deletes it:
+  remove or rename it in Files to use a pack. The card warns while it exists.
+- Other images in /sleep are left alone and are mixed in with the puzzles.
+- A smaller fill removes higher-numbered puzzle files from an earlier, bigger
+  fill.
+- "Delete /sleep/lichess-puzzle-*.bmp" removes all puzzle images and nothing
+  else.
+
 KEEPING IT FRESH
 
 The reader cannot draw the puzzle by itself, so the image is made in the
@@ -25,7 +43,8 @@ one. Companion apps can trigger it through the job queue:
   {"plugin":"lichess_puzzles","action":"update"}
 
 with /plugins-run open. Add "args":{"force":true} to redraw even when the
-puzzle has not changed.
+puzzle has not changed. Pack mode has "fill" (args: {"count":31}) and
+"clean".
 
 OPTIONS (on the web card)
 

@@ -1,4 +1,4 @@
-// node test/test.js — checks the chess notation and the BMP encoder.
+// node test/test.js — checks the chess notation, the BMP encoder and the batch URL.
 const assert = require('assert');
 const c = require('../lichess-puzzles.crosspoint-plugin/plugin.js');
 
@@ -27,4 +27,12 @@ assert.strictEqual(String.fromCharCode(bmp[0], bmp[1]), 'BM');
 const topRow = 62 + (H - 1) * 60; // rows are stored bottom-up
 assert.strictEqual(bmp[topRow], 0x7f);
 assert.strictEqual(bmp[62], 0xff);
+
+// Batch URL: theme and difficulty, falling back to mix / normal.
+assert.strictEqual(c.batchUrl('mix', 'normal', 31), 'https://lichess.org/api/puzzle/batch/mix?nb=31&difficulty=normal');
+assert.strictEqual(c.batchUrl('fork', 'harder', 5), 'https://lichess.org/api/puzzle/batch/fork?nb=5&difficulty=harder');
+assert.strictEqual(c.batchUrl('../x', 'insane', 1), 'https://lichess.org/api/puzzle/batch/mix?nb=1&difficulty=normal');
+const keys = c.THEME_GROUPS.flatMap(([, l]) => l.map(([k]) => k));
+assert.strictEqual(new Set(keys).size, keys.length);
+assert.deepStrictEqual(c.DIFFICULTIES.map(([k]) => k), ['easiest', 'easier', 'normal', 'harder', 'hardest']);
 console.log('ok');

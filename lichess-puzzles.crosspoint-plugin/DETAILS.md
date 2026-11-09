@@ -4,7 +4,7 @@ Puts lichess.org chess puzzles on the sleep screen, drawn like a classic newspap
 
 ## Two modes
 
-- **Puzzle pack (default):** 1 to 50 puzzles in /sleep/lichess-puzzle-01.bmp and up. The reader shows a different one each time it sleeps, so one visit lasts the whole pack.
+- **Puzzle pack (default):** 1 to 50 puzzles in /sleep/lichess-puzzle-01.bmp and up, with a choice of theme (fork, mate in 2, endgames and 70 more, or a healthy mix) and difficulty (easiest to hardest). The reader shows a different one each time it sleeps, so one visit lasts the whole pack.
 - **Daily puzzle:** today's lichess puzzle in /sleep.bmp, refreshed whenever the Plugins page is open in a browser. Off until you choose it, and it asks before replacing a /sleep.bmp it did not create.
 
 ## Setup

@@ -10,7 +10,10 @@ Made for the XTEINK X4 Pro reader with 480x800 pixel screen resolution.
 Puzzle API URLs:
 
 - Daily puzzle: https://lichess.org/api/puzzle/daily
-- Puzzle pack (batch): https://lichess.org/api/puzzle/batch/mix?nb=N (N = 1–50)
+- Puzzle pack (batch): https://lichess.org/api/puzzle/batch/{angle}?nb=N&difficulty=D
+  (N = 1–50; angle = a theme key such as `mix` or `fork`; D = easiest, easier,
+  normal, harder or hardest). See
+  https://lichess.org/api#tag/puzzles/GET/api/puzzle/batch/{angle}
 
 Crosspoint plugins documentation:
 https://github.com/crosspoint-reader/crosspoint-reader/blob/develop/docs/sd-plugins.md
@@ -53,8 +56,9 @@ Daily mode never overwrites a `/sleep.bmp` it did not write (checked by size
 and a fingerprint of its contents); the card says so and offers an explicit
 Replace button.
 
-**Puzzle pack mode** fetches 1–50 puzzles (the most lichess sends in one batch) from
-`https://lichess.org/api/puzzle/batch/mix?nb=N` (downloaded to the SD card
+**Puzzle pack mode** fetches 1–50 puzzles (the most lichess sends in one batch) of
+the chosen theme and difficulty (default `mix`, `normal`) from
+`https://lichess.org/api/puzzle/batch/{angle}?nb=N&difficulty=D` (downloaded to the SD card
 with `fetchToSd`, since a full batch can exceed the relay's body cap) and
 writes `/sleep/lichess-puzzle-NN.bmp`. With no `/sleep.bmp`, the Custom sleep
 screen shows a different one on every sleep, cycling through all of them, so

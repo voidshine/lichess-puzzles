@@ -13,14 +13,75 @@
   const SCREEN_H = 800;
   const SLEEP_PATH = '/sleep.bmp';
   const PUZZLE_URL = 'https://lichess.org/api/puzzle/daily';
-  const BATCH_URL = 'https://lichess.org/api/puzzle/batch/mix?nb=';
+  const BATCH_URL = 'https://lichess.org/api/puzzle/batch/';
   const PACK_DIR = '/sleep';
   const PACK_MAX = 50; // lichess returns at most 50 puzzles per batch request
   const PACK_FILE_RE = /^lichess-puzzle-\d+\.bmp$/;
   const packName = (n) => 'lichess-puzzle-' + String(n).padStart(2, '0') + '.bmp';
   const SLEEP_SCREEN_CUSTOM = 2; // CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM
 
-  const DEFAULT_CONFIG = { showThemes: true, showSolution: true, showCoords: true, mode: 'pack', packSize: 31 };
+  // Batch difficulty, relative to a 1500 rating (requests are anonymous).
+  const DIFFICULTIES = [
+    ['easiest', 'Easiest'], ['easier', 'Easier'], ['normal', 'Normal'], ['harder', 'Harder'], ['hardest', 'Hardest'],
+  ];
+  // Batch themes ("angles"), grouped as on lichess.org/training/themes
+  // (lila modules/puzzle/src/main/PuzzleTheme.scala, names from
+  // translation/source/puzzleTheme.xml).
+  const THEME_GROUPS = [
+    ['Recommended', [['mix', 'Healthy mix']]],
+    ['Phases', [
+      ['opening', 'Opening'], ['middlegame', 'Middlegame'], ['endgame', 'Endgame'],
+      ['rookEndgame', 'Rook endgame'], ['bishopEndgame', 'Bishop endgame'], ['pawnEndgame', 'Pawn endgame'],
+      ['knightEndgame', 'Knight endgame'], ['queenEndgame', 'Queen endgame'], ['queenRookEndgame', 'Queen and Rook'],
+    ]],
+    ['Motifs', [
+      ['advancedPawn', 'Advanced pawn'], ['attackingF2F7', 'Attacking f2 or f7'],
+      ['capturingDefender', 'Capture the defender'], ['discoveredAttack', 'Discovered attack'],
+      ['doubleCheck', 'Double check'], ['exposedKing', 'Exposed king'], ['fork', 'Fork'],
+      ['hangingPiece', 'Hanging piece'], ['kingsideAttack', 'Kingside attack'], ['pin', 'Pin'],
+      ['queensideAttack', 'Queenside attack'], ['sacrifice', 'Sacrifice'], ['skewer', 'Skewer'],
+      ['trappedPiece', 'Trapped piece'],
+    ]],
+    ['Advanced', [
+      ['attraction', 'Attraction'], ['clearance', 'Clearance'], ['collinearMove', 'Collinear move'],
+      ['discoveredCheck', 'Discovered check'], ['defensiveMove', 'Defensive move'], ['deflection', 'Deflection'],
+      ['interference', 'Interference'], ['intermezzo', 'Intermezzo'], ['quietMove', 'Quiet move'],
+      ['xRayAttack', 'X-Ray attack'], ['zugzwang', 'Zugzwang'],
+    ]],
+    ['Mates', [
+      ['mate', 'Checkmate'], ['mateIn1', 'Mate in 1'], ['mateIn2', 'Mate in 2'], ['mateIn3', 'Mate in 3'],
+      ['mateIn4', 'Mate in 4'], ['mateIn5', 'Mate in 5 or more'],
+    ]],
+    ['Mate patterns', [
+      ['anastasiaMate', "Anastasia's mate"], ['arabianMate', 'Arabian mate'], ['backRankMate', 'Back rank mate'],
+      ['balestraMate', 'Balestra mate'], ['blindSwineMate', 'Blind Swine mate'], ['bodenMate', "Boden's mate"],
+      ['cornerMate', 'Corner mate'], ['doubleBishopMate', 'Double bishop mate'], ['dovetailMate', 'Dovetail mate'],
+      ['epauletteMate', 'Epaulette mate'], ['hookMate', 'Hook mate'], ['killBoxMate', 'Kill box mate'],
+      ['pillsburysMate', "Pillsbury's mate"], ['morphysMate', "Morphy's mate"], ['operaMate', 'Opera mate'],
+      ['swallowstailMate', "Swallow's tail mate"], ['triangleMate', 'Triangle mate'],
+      ['vukovicMate', 'Vuković mate'], ['smotheredMate', 'Smothered mate'],
+    ]],
+    ['Special moves', [
+      ['castling', 'Castling'], ['enPassant', 'En passant'], ['promotion', 'Promotion'],
+      ['underPromotion', 'Underpromotion'],
+    ]],
+    ['Goals', [['equality', 'Equality'], ['advantage', 'Advantage'], ['crushing', 'Crushing']]],
+    ['Lengths', [
+      ['oneMove', 'One-move puzzle'], ['short', 'Short puzzle'], ['long', 'Long puzzle'],
+      ['veryLong', 'Very long puzzle'],
+    ]],
+    ['Origin', [['master', 'Master games'], ['masterVsMaster', 'Master vs Master games'], ['superGM', 'Super GM games']]],
+  ];
+  const THEME_NAMES = new Map(THEME_GROUPS.flatMap(([, list]) => list));
+  const cleanAngle = (a) => (THEME_NAMES.has(a) ? a : 'mix');
+  const cleanDifficulty = (d) => (DIFFICULTIES.some(([k]) => k === d) ? d : 'normal');
+  const batchUrl = (angle, difficulty, nb) =>
+    BATCH_URL + cleanAngle(angle) + '?nb=' + nb + '&difficulty=' + cleanDifficulty(difficulty);
+
+  const DEFAULT_CONFIG = {
+    showThemes: true, showSolution: true, showCoords: true, mode: 'pack', packSize: 31,
+    angle: 'mix', difficulty: 'normal',
+  };
 
   // ---------------------------------------------------------------------------
   // Chess: just enough to read a FEN and write the solution in SAN.
@@ -693,7 +754,7 @@
 
   const core = {
     parseFen, toFen, fenAfterPgn, legalMoves, toSan, solutionText, encodeMonoBmp, renderPage, renderToCanvas,
-    toPuzzle, taskLine, PIECES, drawPiece, SCREEN_W, SCREEN_H,
+    toPuzzle, taskLine, batchUrl, THEME_GROUPS, DIFFICULTIES, PIECES, drawPiece, SCREEN_W, SCREEN_H,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = core;
   if (typeof window !== 'undefined') window.LichessPuzzles = core;
@@ -785,9 +846,9 @@
 
     // A 50-puzzle batch is about 33 KB, over the relay's body cap on some
     // firmware, so it is downloaded to the plugin folder and read back.
-    async function fetchBatch(count) {
+    async function fetchBatch(count, angle, difficulty) {
       const tmp = api.dir + '/batch.json';
-      const res = await api.fetchToSd(BATCH_URL + count, tmp, { Accept: 'application/json' });
+      const res = await api.fetchToSd(batchUrl(angle, difficulty, count), tmp, { Accept: 'application/json' });
       if (res && res.status && res.status !== 200) throw new Error('lichess answered HTTP ' + res.status);
       let json;
       try {
@@ -804,18 +865,21 @@
 
     // Writes /sleep/lichess-puzzle-01.bmp … NN.bmp and removes higher-numbered
     // ones left over from a bigger pack. Other files in /sleep are not touched.
-    async function fillPack({ count, canvas = null, onProgress = () => {} } = {}) {
+    async function fillPack({ count, angle, difficulty, canvas = null, onProgress = () => {} } = {}) {
       const config = await loadConfig();
       const n = clampPack(count === undefined ? config.packSize : count);
-      onProgress('Fetching ' + n + ' puzzles from lichess…');
-      const items = await fetchBatch(n);
+      const a = cleanAngle(angle === undefined ? config.angle : angle);
+      const d = cleanDifficulty(difficulty === undefined ? config.difficulty : difficulty);
+      onProgress('Fetching ' + n + ' ' + (a === 'mix' ? '' : THEME_NAMES.get(a) + ' ') +
+        'puzzles (' + d + ') from lichess…');
+      const items = await fetchBatch(n, a, d);
       if (!(await listDir('/')).some((f) => f.isDirectory && f.name === PACK_DIR.slice(1))) {
         await postForm('/mkdir', { name: PACK_DIR.slice(1), path: '/' });
       }
       const target = canvas || document.createElement('canvas');
       for (let i = 0; i < items.length; i++) {
         const puzzle = toPuzzle(items[i]);
-        puzzle.label = 'lichess.org puzzle';
+        puzzle.label = a === 'mix' ? 'lichess.org puzzle' : 'lichess.org · ' + THEME_NAMES.get(a);
         puzzle.date = 'No. ' + (i + 1) + ' of ' + items.length;
         onProgress('Writing ' + packName(i + 1) + ' (' + (i + 1) + ' of ' + items.length + ')…');
         const bmp = renderToCanvas(target, puzzle, config);
@@ -826,7 +890,7 @@
         .map((f) => PACK_DIR + '/' + f.name);
       if (stale.length) await postForm('/delete', { paths: JSON.stringify(stale) });
       const state = (await readJson('state.json')) || {};
-      await writeJson('state.json', Object.assign(state, { pack: { count: items.length, written: new Date().toISOString() } }));
+      await writeJson('state.json', Object.assign(state, { pack: { count: items.length, angle: a, difficulty: d, written: new Date().toISOString() } }));
       return { written: items.length, removed: stale.length };
     }
 
@@ -836,9 +900,12 @@
       return { removed: paths.length };
     }
 
-    // Job queue, e.g. {"plugin":"lichess-puzzles","action":"fill","args":{"count":31}}
+    // Job queue, e.g. {"plugin":"lichess-puzzles","action":"fill",
+    //                  "args":{"count":31,"angle":"fork","difficulty":"harder"}}
     api.registerAction('update', async (args) => update({ force: !!(args && args.force) }));
-    api.registerAction('fill', async (args) => fillPack({ count: args && args.count }));
+    api.registerAction('fill', async (args) => fillPack({
+      count: args && args.count, angle: args && args.angle, difficulty: args && args.difficulty,
+    }));
     api.registerAction('clean', async () => cleanPack());
 
     // --- card UI ---
@@ -865,7 +932,17 @@
     const countInput = el('input', { type: 'number', min: 1, max: PACK_MAX, step: 1, value: DEFAULT_CONFIG.packSize });
     countInput.style.width = '4em';
     const btnFill = button('Fetch and fill');
-    const packRow = el('p', {}, 'Puzzles: ', countInput, ' ', btnFill);
+    const angleSelect = el('select', {});
+    for (const [group, list] of THEME_GROUPS) {
+      const og = el('optgroup', { label: group });
+      for (const [key, name] of list) og.append(el('option', { value: key, textContent: name }));
+      angleSelect.append(og);
+    }
+    const difficultySelect = el('select', {});
+    for (const [key, name] of DIFFICULTIES) difficultySelect.append(el('option', { value: key, textContent: name }));
+    const packRow = el('div', {},
+      el('p', {}, el('label', {}, 'Theme: ', angleSelect), ' ', el('label', {}, 'Difficulty: ', difficultySelect)),
+      el('p', {}, 'Puzzles: ', countInput, ' ', btnFill));
 
     const btnClean = button('Delete /sleep/lichess-puzzle-*.bmp');
     const allButtons = [btnUpdate, btnReplace, btnFill, btnClean];
@@ -949,9 +1026,13 @@
       return busy(async () => {
         config.packSize = clampPack(countInput.value);
         countInput.value = config.packSize;
+        config.angle = cleanAngle(angleSelect.value);
+        config.difficulty = cleanDifficulty(difficultySelect.value);
         await saveConfig();
         showCanvas();
-        const res = await fillPack({ count: config.packSize, canvas, onProgress: setStatus });
+        const res = await fillPack({
+          count: config.packSize, angle: config.angle, difficulty: config.difficulty, canvas, onProgress: setStatus,
+        });
         setStatus('Wrote ' + res.written + ' puzzles to ' + PACK_DIR +
           (res.removed ? ' and removed ' + res.removed + ' left over from a bigger pack' : '') + '.' +
           (res.written < config.packSize ? ' (lichess sent fewer than asked.)' : ''));
@@ -1010,6 +1091,12 @@
       config = await loadConfig();
       config.packSize = clampPack(config.packSize);
       countInput.value = config.packSize;
+      config.angle = cleanAngle(config.angle);
+      config.difficulty = cleanDifficulty(config.difficulty);
+      angleSelect.value = config.angle;
+      difficultySelect.value = config.difficulty;
+      angleSelect.onchange = () => { config.angle = cleanAngle(angleSelect.value); saveConfig(); };
+      difficultySelect.onchange = () => { config.difficulty = cleanDifficulty(difficultySelect.value); saveConfig(); };
       for (const mode of Object.keys(MODE_LABELS)) {
         const radio = el('input', { type: 'radio', name: 'lichess-puzzles-mode', checked: config.mode === mode });
         radio.onchange = async () => {

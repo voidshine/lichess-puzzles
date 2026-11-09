@@ -660,7 +660,7 @@
     try {
       sol = solutionText(pz.fen, pz.solution || [], (pz.initialPly || 0) + 1);
     } catch (e) {
-      console.warn('lichess_puzzles: cannot write solution', e);
+      console.warn('lichess-puzzles: cannot write solution', e);
     }
     return {
       id: pz.id,
@@ -763,8 +763,20 @@
 
     // --- pack mode ---
 
+    // A 50-puzzle batch is about 33 KB, over the relay's body cap on some
+    // firmware, so it is downloaded to the plugin folder and read back.
     async function fetchBatch(count) {
-      const json = await relayJson(BATCH_URL + count);
+      const tmp = api.dir + '/batch.json';
+      const res = await api.fetchToSd(BATCH_URL + count, tmp, { Accept: 'application/json' });
+      if (res && res.status && res.status !== 200) throw new Error('lichess answered HTTP ' + res.status);
+      let json;
+      try {
+        const r = await fetch(api.pluginFile('batch.json'), { cache: 'no-store' });
+        if (!r.ok) throw new Error('cannot read the downloaded batch (HTTP ' + r.status + ')');
+        json = await r.json();
+      } finally {
+        postForm('/delete', { path: tmp }).catch(() => {});
+      }
       const puzzles = (json.puzzles || []).filter((item) => item.puzzle).slice(0, count);
       if (!puzzles.length) throw new Error('lichess sent no puzzles');
       return puzzles;
@@ -804,7 +816,7 @@
       return { removed: paths.length };
     }
 
-    // Job queue, e.g. {"plugin":"lichess_puzzles","action":"fill","args":{"count":31}}
+    // Job queue, e.g. {"plugin":"lichess-puzzles","action":"fill","args":{"count":31}}
     api.registerAction('update', async (args) => update({ force: !!(args && args.force) }));
     api.registerAction('fill', async (args) => fillPack({ count: args && args.count }));
     api.registerAction('clean', async () => cleanPack());

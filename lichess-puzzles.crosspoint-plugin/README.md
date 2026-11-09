@@ -40,7 +40,7 @@ checks lichess for a new daily puzzle and replaces /sleep.bmp when there is
 one. Companion apps can trigger it through the job queue:
 
   POST /api/plugin-jobs
-  {"plugin":"lichess_puzzles","action":"update"}
+  {"plugin":"lichess-puzzles","action":"update"}
 
 with /plugins-run open. Add "args":{"force":true} to redraw even when the
 puzzle has not changed. Pack mode has "fill" (args: {"count":31}) and

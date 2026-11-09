@@ -1,6 +1,6 @@
 // node test/test.js — checks the chess notation and the BMP encoder.
 const assert = require('assert');
-const c = require('../lichess_puzzles/plugin.js');
+const c = require('../lichess-puzzles.crosspoint-plugin/plugin.js');
 
 const eq = (fen, moves, ply, want) => assert.strictEqual(c.solutionText(fen, moves, ply), want);
 eq('r3r1k1/ppp2p2/3p1Pp1/7p/2Pbq2Q/8/PP1B2PP/R4R1K w - - 0 1', ['f1f4', 'e4c2', 'f4d4'], 38, '20.Rf4 Qc2 21.Rxd4');

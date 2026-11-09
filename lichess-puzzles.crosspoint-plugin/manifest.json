@@ -1,0 +1,18 @@
+{
+  "name": "lichess-puzzles",
+  "title": "lichess puzzles",
+  "description": "lichess.org puzzles as newspaper chess diagrams on the sleep screen",
+  "author": "voidshine",
+  "version": "1.2.0",
+  "mount": "settings",
+  "compatibility": {
+    "firmware_family": ["crosspoint"],
+    "plugin_api_min": 1
+  },
+  "files": [
+    "manifest.json",
+    "plugin.js",
+    "README.md",
+    "DETAILS.md"
+  ]
+}

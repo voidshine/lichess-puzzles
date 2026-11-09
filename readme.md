@@ -1,4 +1,4 @@
-# lichess puzzles
+# lichess-puzzles
 
 This is a Crosspoint reader plugin that fetches the lichess.org daily puzzle
 and leaves it showing on the lock/sleep screen. The board occupies most of
@@ -7,8 +7,10 @@ classic newspaper Chess puzzles.
 
 Made for the XTEINK X4 Pro reader with 480x800 pixel screen resolution.
 
-Puzzle API URL:
-https://lichess.org/api/puzzle/daily
+Puzzle API URLs:
+
+- Daily puzzle: https://lichess.org/api/puzzle/daily
+- Puzzle pack (batch): https://lichess.org/api/puzzle/batch/mix?nb=N (N = 1–50)
 
 Crosspoint plugins documentation:
 https://github.com/crosspoint-reader/crosspoint-reader/blob/develop/docs/sd-plugins.md

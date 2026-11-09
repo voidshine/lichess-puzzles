@@ -10,16 +10,20 @@ SETUP
 2. Settings > Display > Sleep Screen: Custom. (The plugin's web card offers a
    button that does this for you.)
 3. Start File Transfer and open the reader's web page in a browser, then go to
-   Plugins. The card fetches today's puzzle and writes it to /sleep.bmp.
+   Plugins. The card starts in Puzzle pack mode: pick how many puzzles and
+   press "Fetch and fill".
 
-The next time the reader sleeps, the puzzle is on screen.
+The next time the reader sleeps, a puzzle is on screen. Nothing is written
+until you press a button or choose Daily puzzle.
 
 TWO MODES
 
 Daily puzzle: today's puzzle in /sleep.bmp. Refreshed whenever the Plugins
-page is open.
+page is open. Off until you select it. If a /sleep.bmp the plugin did not
+create is already there, the card says so and writes nothing until you press
+"Replace existing /sleep.bmp".
 
-Puzzle pack: pick how many puzzles (1-50) and press "Fetch and fill". The
+Puzzle pack (the default): pick how many puzzles (1-50) and press "Fetch and fill". The
 plugin writes /sleep/lichess-puzzle-01.bmp, -02.bmp, ... and the reader shows
 a different one each time it sleeps, going through all of them before any
 repeats. One visit lasts as many sleeps as you have puzzles.

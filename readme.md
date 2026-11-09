@@ -42,12 +42,16 @@ needed. Never reuse a tag: every runtime change needs a new version.
 ## How it works
 
 CrossPoint cannot run plugin code on the reader itself, so `plugin.js` runs in
-the browser (the device's Plugins page, or `/plugins-run`). It fetches the
-daily puzzle through the device's `/api/relay`, draws a 480x800 newspaper-style
+the browser (the device's Plugins page, or `/plugins-run`). It starts in
+puzzle pack mode (below) and writes nothing until the user acts. In **daily
+mode** it fetches the daily puzzle through the device's `/api/relay`, draws a 480x800 newspaper-style
 diagram on a canvas, and writes it to `/sleep.bmp` as a 1-bit BMP. The
 reader's **Custom** sleep screen shows `/sleep.bmp` first. The image is
 refreshed whenever the page is open and lichess has a new puzzle, or on demand
 through the job queue (`{"plugin":"lichess-puzzles","action":"update"}`).
+Daily mode never overwrites a `/sleep.bmp` it did not write (checked by size
+and a fingerprint of its contents); the card says so and offers an explicit
+Replace button.
 
 **Puzzle pack mode** fetches 1–50 puzzles (the most lichess sends in one batch) from
 `https://lichess.org/api/puzzle/batch/mix?nb=N` (downloaded to the SD card

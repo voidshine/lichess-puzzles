@@ -20,7 +20,7 @@
   const packName = (n) => 'lichess-puzzle-' + String(n).padStart(2, '0') + '.bmp';
   const SLEEP_SCREEN_CUSTOM = 2; // CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM
 
-  const DEFAULT_CONFIG = { showThemes: true, showSolution: true, showCoords: true, mode: 'daily', packSize: 31 };
+  const DEFAULT_CONFIG = { showThemes: true, showSolution: true, showCoords: true, mode: 'pack', packSize: 31 };
 
   // ---------------------------------------------------------------------------
   // Chess: just enough to read a FEN and write the solution in SAN.
@@ -635,6 +635,13 @@
     return img;
   }
 
+  // FNV-1a 32-bit fingerprint, used to recognise the /sleep.bmp this plugin wrote.
+  function fingerprint(bytes) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193);
+    return (h >>> 0).toString(16).padStart(8, '0') + ':' + bytes.length;
+  }
+
   function bytesToBase64(bytes) {
     let s = '';
     for (let i = 0; i < bytes.length; i += 0x8000) {
@@ -729,7 +736,6 @@
       const r = await fetch(url, { method: 'POST', body: new URLSearchParams(fields) });
       if (!r.ok) throw new Error(url + ' HTTP ' + r.status + ': ' + (await r.text()).slice(0, 120));
     }
-    const fileExists = async (dir, name) => (await listDir(dir)).some((f) => f.name === name && !f.isDirectory);
     const packFiles = async () => (await listDir(PACK_DIR)).filter((f) => !f.isDirectory && PACK_FILE_RE.test(f.name));
 
     async function relayJson(url) {
@@ -747,16 +753,30 @@
       const [config, state] = await Promise.all([loadConfig(), readJson('state.json')]);
       const puzzle = toPuzzle(await relayJson(PUZZLE_URL));
       const bmp = renderToCanvas(canvas || document.createElement('canvas'), puzzle, config);
-      const owned = !!(state && state.owner);
-      if (!owned && !allowReplace && (await fileExists('/', SLEEP_PATH.slice(1)))) {
-        return { puzzle: puzzle.id, written: false, reason: 'foreign-sleep-bmp' };
+      if (!allowReplace) {
+        // Fail closed: if the root cannot be listed, do not write at all.
+        const r = await fetch('/api/files?path=/', { cache: 'no-cache' });
+        if (!r.ok) throw new Error('cannot list the SD card (HTTP ' + r.status + '), not touching ' + SLEEP_PATH);
+        const list = await r.json();
+        if (!Array.isArray(list)) throw new Error('unexpected file listing, not touching ' + SLEEP_PATH);
+        const existing = list.find((f) => f.name === SLEEP_PATH.slice(1) && !f.isDirectory);
+        // Ours only if the file on the card has exactly the bytes we last
+        // wrote (size from the listing first, then the contents); anything
+        // else is the user's image. The firmware gives no file timestamps.
+        let ours = false;
+        if (existing && state && state.hash && Number(existing.size) === Number(state.hash.split(':')[1])) {
+          const d = await fetch('/download?path=' + encodeURIComponent(SLEEP_PATH), { cache: 'no-store' });
+          if (!d.ok) throw new Error('cannot read ' + SLEEP_PATH + ' (HTTP ' + d.status + '), not touching it');
+          ours = fingerprint(new Uint8Array(await d.arrayBuffer())) === state.hash;
+        }
+        if (existing && !ours) return { puzzle: puzzle.id, written: false, reason: 'foreign-sleep-bmp' };
       }
       if (!force && state && state.puzzle === puzzle.id) {
         return { puzzle: puzzle.id, written: false, reason: 'up-to-date' };
       }
       await api.writeFile(SLEEP_PATH, bytesToBase64(bmp));
       await writeJson('state.json', Object.assign({}, state, {
-        owner: true, puzzle: puzzle.id, written: new Date().toISOString(),
+        owner: true, hash: fingerprint(bmp), puzzle: puzzle.id, written: new Date().toISOString(),
       }));
       return { puzzle: puzzle.id, written: true };
     }
@@ -915,8 +935,10 @@
         } else if (res.reason === 'up-to-date') {
           setStatus('Puzzle ' + res.puzzle + ' is already on the sleep screen.');
         } else if (res.reason === 'foreign-sleep-bmp') {
-          setStatus('A ' + SLEEP_PATH + ' this plugin did not create is on the SD card. ' +
-            'Replace it to show the puzzle (back it up first if you want to keep it).');
+          setStatus('Nothing written: there is already a ' + SLEEP_PATH + ' on the SD card that this plugin ' +
+            'did not create. Daily mode will not overwrite it on its own. Press “Replace existing ' + SLEEP_PATH +
+            '” to put the puzzle there (download a copy in Files first if you want to keep your image), ' +
+            'or switch back to Puzzle pack.');
           btnReplace.style.display = '';
         }
         await refreshNotes();
@@ -938,7 +960,10 @@
     }
 
     btnUpdate.onclick = () => runDaily({ force: true });
-    btnReplace.onclick = () => runDaily({ force: true, allowReplace: true });
+    btnReplace.onclick = () => {
+      if (!confirm('Overwrite ' + SLEEP_PATH + ' with the puzzle? Your current image will be lost unless you have a copy.')) return;
+      runDaily({ force: true, allowReplace: true });
+    };
     btnFill.onclick = runFill;
     btnClean.onclick = () => {
       if (!confirm('Delete every ' + PACK_DIR + '/lichess-puzzle-*.bmp file?')) return;

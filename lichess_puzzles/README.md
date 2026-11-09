@@ -19,7 +19,7 @@ TWO MODES
 Daily puzzle: today's puzzle in /sleep.bmp. Refreshed whenever the Plugins
 page is open.
 
-Puzzle pack: pick how many puzzles (1-99) and press "Fetch and fill". The
+Puzzle pack: pick how many puzzles (1-50) and press "Fetch and fill". The
 plugin writes /sleep/lichess-puzzle-01.bmp, -02.bmp, ... and the reader shows
 a different one each time it sleeps, going through all of them before any
 repeats. One visit lasts as many sleeps as you have puzzles.

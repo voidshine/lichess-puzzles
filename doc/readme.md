@@ -13,10 +13,12 @@ https://lichess.org/api/puzzle/daily
 Crosspoint plugins documentation:
 https://github.com/crosspoint-reader/crosspoint-reader/blob/develop/docs/sd-plugins.md
 
-## Build
+## Install
 
-Run ./build.sh and the .zip plugin package is left in
-`out/lichess_puzzles.zip`.
+The `lichess_puzzles/` folder is the plugin; there is no build step. Copy it
+to `/plugins/` on the SD card (so the files end up in
+`/plugins/lichess_puzzles/`), or create that folder in the reader's web file
+manager and upload `manifest.json`, `plugin.js` and `README.md` into it.
 
 
 
@@ -30,8 +32,8 @@ reader's **Custom** sleep screen shows `/sleep.bmp` first. The image is
 refreshed whenever the page is open and lichess has a new puzzle, or on demand
 through the job queue (`{"plugin":"lichess_puzzles","action":"update"}`).
 
-**Puzzle pack mode** fetches 1–99 puzzles from
-`https://lichess.org/api/puzzle/batch/mix?nb=N` (up to 50 per request) and
+**Puzzle pack mode** fetches 1–50 puzzles (the most lichess sends in one batch) from
+`https://lichess.org/api/puzzle/batch/mix?nb=N` and
 writes `/sleep/lichess-puzzle-NN.bmp`. With no `/sleep.bmp`, the Custom sleep
 screen shows a different one on every sleep, cycling through all of them, so
 the user only needs to connect once per pack. The firmware cannot choose a

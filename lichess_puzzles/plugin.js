@@ -14,9 +14,8 @@
   const SLEEP_PATH = '/sleep.bmp';
   const PUZZLE_URL = 'https://lichess.org/api/puzzle/daily';
   const BATCH_URL = 'https://lichess.org/api/puzzle/batch/mix?nb=';
-  const BATCH_MAX = 50; // lichess returns at most 50 puzzles per batch request
   const PACK_DIR = '/sleep';
-  const PACK_MAX = 99; // two-digit file numbers
+  const PACK_MAX = 50; // lichess returns at most 50 puzzles per batch request
   const PACK_FILE_RE = /^lichess-puzzle-\d+\.bmp$/;
   const packName = (n) => 'lichess-puzzle-' + String(n).padStart(2, '0') + '.bmp';
   const SLEEP_SCREEN_CUSTOM = 2; // CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM
@@ -765,21 +764,10 @@
     // --- pack mode ---
 
     async function fetchBatch(count) {
-      const seen = new Set();
-      const out = [];
-      for (let tries = 0; out.length < count && tries < Math.ceil(count / BATCH_MAX) + 3; tries++) {
-        const json = await relayJson(BATCH_URL + Math.min(BATCH_MAX, count - out.length));
-        let added = 0;
-        for (const item of json.puzzles || []) {
-          if (out.length >= count || !item.puzzle || seen.has(item.puzzle.id)) continue;
-          seen.add(item.puzzle.id);
-          out.push(item);
-          added++;
-        }
-        if (!added) break;
-      }
-      if (!out.length) throw new Error('lichess sent no puzzles');
-      return out;
+      const json = await relayJson(BATCH_URL + count);
+      const puzzles = (json.puzzles || []).filter((item) => item.puzzle).slice(0, count);
+      if (!puzzles.length) throw new Error('lichess sent no puzzles');
+      return puzzles;
     }
 
     // Writes /sleep/lichess-puzzle-01.bmp … NN.bmp and removes higher-numbered
